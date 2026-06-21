@@ -1,0 +1,41 @@
+# Network Incident Investigator - Dependencies
+
+# Core Data Science
+pandas==2.0.3
+numpy==1.24.3
+scikit-learn==1.3.0
+
+# Time Series Analysis (Optional, for STL)
+statsmodels==0.14.0
+
+# API & Web Framework
+fastapi==0.103.1
+uvicorn==0.23.2
+pydantic==2.4.2
+python-multipart==0.0.6
+
+# Frontend
+streamlit==1.28.1
+
+# GenAI & LLM
+requests==2.31.0
+openai==1.3.3  # Optional: for OpenAI provider
+
+# Cloud Providers (Optional)
+# google-cloud-aiplatform==1.35.0  # For Vertex AI
+# azure-openai==0.0.1  # For Azure OpenAI
+
+# Configuration & Environment
+python-dotenv==1.0.0
+
+# Logging & Monitoring
+python-json-logger==2.0.7
+
+# Development
+pytest==7.4.3
+pytest-cov==4.1.0
+black==23.11.0
+pylint==3.0.2
+
+# Testing HTTP
+httpx==0.25.0

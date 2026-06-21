@@ -1,0 +1,84 @@
+# Network Incident Investigator - Docker Compose Configuration
+# Deploys the full stack with frontend, backend, and optional Ollama
+
+version: '3.8'
+
+services:
+  
+  # Backend API Service
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - "8000:8000"
+    environment:
+      - GENAI_PROVIDER=ollama_local
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - LOG_LEVEL=INFO
+      - BACKEND_WORKERS=4
+    depends_on:
+      - ollama
+    volumes:
+      - ./data:/app/data
+      - ./exports:/app/exports
+    networks:
+      - incident-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+  
+  # Frontend Service (Streamlit)
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "8501:8501"
+    environment:
+      - STREAMLIT_SERVER_PORT=8501
+      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
+    depends_on:
+      - backend
+    volumes:
+      - ./data:/app/data
+      - ./exports:/app/exports
+    networks:
+      - incident-network
+    restart: unless-stopped
+  
+  # Ollama Service (Local LLM)
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - incident-network
+    restart: unless-stopped
+    # Pull model on startup (optional - adjust based on available resources)
+    # environment:
+    #   - OLLAMA_MODEL_PULL=llama2
+
+volumes:
+  ollama_data:
+
+networks:
+  incident-network:
+    driver: bridge
+
+# Usage:
+#   docker-compose up -d              # Start all services
+#   docker-compose ps                 # Check status
+#   docker-compose logs -f backend    # View backend logs
+#   docker-compose down               # Stop all services
+#
+# Access:
+#   Frontend:   http://localhost:8501
+#   Backend:    http://localhost:8000
+#   API Docs:   http://localhost:8000/docs
+#   Ollama:     http://localhost:11434
