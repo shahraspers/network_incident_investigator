@@ -1,0 +1,149 @@
+# Audit Rules for Network Incident Investigator
+# Defines what events to log, retention policies, and alerts
+
+audit_events:
+  # Data ingestion
+  upload_data:
+    enabled: true
+    log_details:
+      - file_name
+      - row_count
+      - file_size_mb
+      - data_source_type
+    retention_days: 365
+
+  # Anomaly detection
+  run_anomaly_detection:
+    enabled: true
+    log_details:
+      - metrics
+      - detection_method
+      - threshold
+      - anomalies_detected
+      - execution_time_ms
+    retention_days: 365
+
+  # LLM operations
+  generate_explanation:
+    enabled: true
+    log_details:
+      - llm_provider
+      - model
+      - tokens_used
+      - response_time_ms
+      - confidence_score
+    retention_days: 180
+    scrub_pii: true
+
+  # Access control
+  create_user:
+    enabled: true
+    alert_on_critical: true
+    retention_days: 365
+
+  create_api_key:
+    enabled: true
+    alert_on_critical: true
+    retention_days: 365
+
+  change_user_role:
+    enabled: true
+    alert_on_critical: true
+    retention_days: 365
+
+  # Security events
+  unauthorized_access:
+    enabled: true
+    alert_immediately: true
+    retention_days: 730  # 2 years for security events
+
+  system_error:
+    enabled: true
+    log_details:
+      - error_type
+      - error_message
+      - traceback
+      - affected_service
+    retention_days: 180
+
+  # User actions
+  view_metrics:
+    enabled: false  # Too verbose, disable by default
+    retention_days: 90
+
+  view_results:
+    enabled: true
+    retention_days: 180
+
+  download_report:
+    enabled: true
+    log_details:
+      - report_type
+      - file_size_mb
+      - recipient_role
+    retention_days: 180
+
+# Alert rules
+alerts:
+  # Unusual activity
+  multiple_failed_logins:
+    condition: "3 failed attempts in 10 minutes"
+    severity: "high"
+    action: "lock_account"
+
+  unauthorized_access_attempts:
+    condition: "any unauthorized_access event"
+    severity: "critical"
+    action: "alert_admin"
+
+  privilege_escalation:
+    condition: "user_role change to admin"
+    severity: "critical"
+    action: "alert_admin"
+
+  # Performance degradation
+  high_error_rate:
+    condition: "error_rate > 5% in last hour"
+    severity: "medium"
+    action: "alert_ops"
+
+  anomaly_detector_down:
+    condition: "anomaly_detector service unhealthy"
+    severity: "critical"
+    action: "alert_ops"
+
+# Compliance rules
+compliance:
+  # GDPR compliance
+  pii_protection:
+    enabled: true
+    scrub_on_log: true
+    mask_patterns:
+      - email
+      - phone
+      - credit_card
+
+  # Data retention
+  data_retention_policy:
+    default_retention_days: 365
+    # Extend retention for compliance logs
+    compliance_logs: 2555  # 7 years
+    # Delete old audit logs after retention period
+
+  # Change management
+  change_log_enabled: true
+  change_approval_required: true
+
+# Export and archival
+export:
+  enabled: true
+  permission_required: "admin"
+  format_options:
+    - json
+    - csv
+  compression: "gzip"
+
+archival:
+  enabled: false
+  archive_destination: "s3://audit-logs-archive"
+  archive_schedule: "weekly"  # Archive old logs weekly

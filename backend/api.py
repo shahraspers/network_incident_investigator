@@ -1,8 +1,9 @@
 """
 Backend REST API for Network Incident Investigator.
 FastAPI-based service with endpoints for data, anomaly detection, and GenAI reasoning.
+Includes governance, monitoring, and observability features.
 """
-from fastapi import FastAPI, File, UploadFile, HTTPException, Query
+from fastapi import FastAPI, File, UploadFile, HTTPException, Query, Header, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from typing import Dict, List, Optional
@@ -21,9 +22,23 @@ from services.genai_reasoning.context_builder import build_anomaly_context
 from data.cell_site_kpi_generator import generate_synthetic_kpi_data
 from backend.data_loader import load_data_from_csv
 
+# Import governance and observability
+from services.logging import get_logger, PerformanceTimer
+from services.governance import get_access_controller, get_audit_logger, Permission, AuditAction
+from services.observability import get_metrics_collector
+from services.monitoring import get_health_monitor, get_failover_manager
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Initialize governance and observability
+structured_logger = get_logger("nii_api")
+access_controller = get_access_controller()
+audit_logger = get_audit_logger()
+metrics_collector = get_metrics_collector()
+health_monitor = get_health_monitor()
+failover_manager = get_failover_manager()
 
 # Create FastAPI app
 app = FastAPI(
@@ -59,6 +74,7 @@ class AnomalyDetectionResponse(BaseModel):
     detection_method: str
     timestamp: str
     message: str
+    trace_id: Optional[str] = None
 
 
 class AnomalyExplanationRequest(BaseModel):
@@ -104,12 +120,28 @@ anomaly_service = NetworkKPIAnomalyDetectionService()
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
-    """Health check endpoint"""
+    """Health check endpoint - basic"""
     return HealthResponse(
         status="healthy",
         timestamp=datetime.now().isoformat(),
         version="1.0.0"
     )
+
+
+@app.get("/api/health")
+async def detailed_health_check():
+    """Comprehensive health check with service status"""
+    health = health_monitor.check_all_services()
+    metrics_collector.record_request()
+    return health
+
+
+@app.get("/api/health")
+async def detailed_health_check():
+    """Comprehensive health check with service status"""
+    health = health_monitor.check_all_services()
+    metrics_collector.record_request()
+    return health
 
 
 @app.get("/api/info")
@@ -132,12 +164,19 @@ async def get_info():
 # ============================================================================
 
 @app.post("/api/data/upload")
-async def upload_csv(file: UploadFile = File(...)):
+async def upload_csv(
+    file: UploadFile = File(...),
+    x_user: str = Header(default="anonymous"),
+    x_trace_id: Optional[str] = Header(None)
+):
     """
     Upload CSV file with network metrics.
     
     Returns: Summary of uploaded data
     """
+    trace_id = x_trace_id or "upload_{}".format(datetime.now().timestamp())
+    metrics_collector.record_request()
+    
     try:
         global uploaded_data
         
@@ -151,7 +190,20 @@ async def upload_csv(file: UploadFile = File(...)):
         
         uploaded_data = df
         
-        logger.info(f"Uploaded {len(df)} rows from {file.filename}")
+        # Log audit event
+        audit_logger.log_data_upload(
+            actor=x_user,
+            file_name=file.filename,
+            row_count=len(df)
+        )
+        
+        structured_logger.info(
+            f"Uploaded {len(df)} rows from {file.filename}",
+            module="api.upload",
+            trace_id=trace_id,
+            file_name=file.filename,
+            row_count=len(df)
+        )
         
         return {
             "success": True,
@@ -159,11 +211,17 @@ async def upload_csv(file: UploadFile = File(...)):
             "rows": len(df),
             "columns": list(df.columns),
             "sites": df["site_id"].nunique() if "site_id" in df.columns else 0,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
+            "trace_id": trace_id
         }
     
     except Exception as e:
-        logger.error(f"Upload error: {e}")
+        structured_logger.error(
+            f"Upload error: {e}",
+            module="api.upload",
+            trace_id=trace_id,
+            error=str(e)
+        )
         raise HTTPException(status_code=400, detail=str(e))
 
 
@@ -225,27 +283,32 @@ async def generate_synthetic_data(request: SyntheticDataRequest):
 # ============================================================================
 
 @app.post("/api/anomaly/detect", response_model=AnomalyDetectionResponse)
-async def detect_anomalies(request: AnomalyDetectionRequest):
+async def detect_anomalies(
+    request: AnomalyDetectionRequest,
+    x_user: str = Header(default="anonymous"),
+    x_trace_id: Optional[str] = Header(None)
+):
     """
     Detect anomalies in uploaded data.
     
     Returns: Detection summary and results
     """
     global uploaded_data, anomaly_results
+    trace_id = x_trace_id or "detect_{}".format(datetime.now().timestamp())
+    metrics_collector.record_request()
     
     if uploaded_data is None:
         raise HTTPException(status_code=400, detail="No data uploaded")
     
     try:
-        logger.info(f"Running anomaly detection with {request.method}")
-        
-        # Run detection
-        result_df = anomaly_service.detect_anomalies(
-            df=uploaded_data,
-            metrics=request.metrics,
-            method=request.method,
-            config={"threshold": request.threshold, "window_size": request.window_size}
-        )
+        with PerformanceTimer(structured_logger, "anomaly_detection", "api.detect", trace_id) as timer:
+            # Run detection
+            result_df = anomaly_service.detect_anomalies(
+                df=uploaded_data,
+                metrics=request.metrics,
+                method=request.method,
+                config={"threshold": request.threshold, "window_size": request.window_size}
+            )
         
         anomaly_results = result_df
         
@@ -257,17 +320,35 @@ async def detect_anomalies(request: AnomalyDetectionRequest):
             anomalies_found = 0
             anomaly_rate = 0.0
         
+        # Record metrics
+        metrics_collector.record_anomalies(anomalies_found)
+        
+        # Log audit event
+        audit_logger.log_detection_run(
+            actor=x_user,
+            site_id="all",
+            metrics_count=len(request.metrics),
+            anomalies_detected=anomalies_found
+        )
+        
         return AnomalyDetectionResponse(
             success=True,
             anomalies_found=anomalies_found,
             anomaly_rate=anomaly_rate,
             detection_method=request.method,
             timestamp=datetime.now().isoformat(),
-            message=f"Detected {anomalies_found} anomalies ({anomaly_rate:.1f}%)"
+            message=f"Detected {anomalies_found} anomalies ({anomaly_rate:.1f}%)",
+            trace_id=trace_id
         )
     
     except Exception as e:
-        logger.error(f"Detection error: {e}")
+        metrics_collector.record_error("api.detect", "DetectionError", str(e))
+        structured_logger.error(
+            f"Detection error: {e}",
+            module="api.detect",
+            trace_id=trace_id,
+            error=str(e)
+        )
         raise HTTPException(status_code=400, detail=str(e))
 
 
@@ -367,6 +448,7 @@ async def explain_anomaly(request: AnomalyExplanationRequest):
 @app.get("/api/genai/providers")
 async def get_providers():
     """Get list of supported GenAI providers"""
+    provider_status = failover_manager.get_provider_status()
     return {
         "providers": [
             "ollama_local",
@@ -374,8 +456,78 @@ async def get_providers():
             "vertex_ai",
             "azure_openai"
         ],
+        "provider_status": provider_status,
         "default": "ollama_local"
     }
+
+
+# ============================================================================
+# OBSERVABILITY ENDPOINTS
+# ============================================================================
+
+@app.get("/api/metrics")
+async def get_platform_metrics():
+    """Get comprehensive platform metrics and performance data"""
+    metrics_collector.record_request()
+    return metrics_collector.get_platform_metrics()
+
+
+@app.get("/api/metrics/latency")
+async def get_latency_metrics(
+    module: Optional[str] = Query(None),
+    operation: Optional[str] = Query(None),
+    minutes: int = Query(60, ge=1, le=1440)
+):
+    """Get latency metrics for specific module/operation"""
+    return metrics_collector.get_latency_stats(
+        module=module,
+        operation=operation,
+        minutes=minutes
+    )
+
+
+@app.get("/api/metrics/tokens")
+async def get_token_metrics(minutes: int = Query(60, ge=1, le=1440)):
+    """Get LLM token usage and cost metrics"""
+    return metrics_collector.get_token_usage_stats(minutes=minutes)
+
+
+@app.get("/api/metrics/errors")
+async def get_error_metrics(minutes: int = Query(60, ge=1, le=1440)):
+    """Get error statistics"""
+    return metrics_collector.get_error_stats(minutes=minutes)
+
+
+# ============================================================================
+# GOVERNANCE ENDPOINTS
+# ============================================================================
+
+@app.get("/api/governance/users")
+async def list_users(x_user: str = Header(default="anonymous")):
+    """List all users (admin only)"""
+    if not access_controller.check_permission(x_user, Permission.MANAGE_ACCESS):
+        audit_logger.log_unauthorized_access(
+            actor=x_user,
+            resource_type="users",
+            resource_id="list"
+        )
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    
+    return {"users": access_controller.list_users()}
+
+
+@app.get("/api/governance/audit-logs")
+async def get_audit_logs(
+    actor: Optional[str] = Query(None),
+    action: Optional[str] = Query(None),
+    limit: int = Query(100, ge=1, le=1000),
+    x_user: str = Header(default="anonymous")
+):
+    """Get audit logs (admin only)"""
+    if not access_controller.check_permission(x_user, Permission.VIEW_AUDIT_LOGS):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    
+    return audit_logger.get_audit_trail(actor=actor, action=action, limit=limit)
 
 
 # ============================================================================

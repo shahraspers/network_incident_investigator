@@ -1,0 +1,92 @@
+# Access Control Policies for Network Incident Investigator
+# Defines role-based access control (RBAC) and permissions
+
+roles:
+  viewer:
+    description: "Read-only access to metrics and summaries"
+    permissions:
+      - view_metrics
+    capabilities:
+      - view_dashboard
+      - view_anomaly_summaries
+
+  analyst:
+    description: "Can run detection and view explanations"
+    permissions:
+      - view_metrics
+      - run_detection
+      - view_explanations
+    capabilities:
+      - upload_data
+      - run_anomaly_detection
+      - request_llm_explanations
+      - export_reports
+
+  admin:
+    description: "Full administrative access"
+    permissions:
+      - view_metrics
+      - run_detection
+      - view_explanations
+      - manage_llm_providers
+      - manage_data_sources
+      - view_audit_logs
+      - manage_access
+      - manage_config
+    capabilities:
+      - all
+
+  api_service:
+    description: "Service-to-service integration"
+    permissions:
+      - run_detection
+      - view_explanations
+    capabilities:
+      - batch_detection
+      - webhook_notifications
+
+# Default access policies
+policies:
+  # Data access
+  data_access:
+    rule: "Users can only access data they uploaded"
+    exception: "Admins can access all data"
+
+  # Detection execution
+  detection_execution:
+    rule: "Analyst+ can run detection"
+    cooldown_seconds: 30  # Min time between detection runs
+    max_sites_per_run: 100
+
+  # LLM explanations
+  llm_explanations:
+    rule: "Analyst+ can request explanations"
+    daily_limit_per_user: 100
+    timeout_seconds: 30
+
+  # Audit trail
+  audit_trail:
+    retention_days: 365
+    immutable: true
+    query_permission: "admin"
+
+# IP allowlist/blocklist
+network_policies:
+  allowlist_enabled: false
+  blocklist_enabled: false
+
+# API rate limiting
+rate_limiting:
+  enabled: true
+  requests_per_minute:
+    viewer: 60
+    analyst: 300
+    admin: 1000
+    api_service: 500
+
+# Sensitive operations requiring approval
+sensitive_operations:
+  - change_llm_provider
+  - manage_api_keys
+  - export_audit_logs
+  - bulk_delete_data
