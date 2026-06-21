@@ -5,55 +5,65 @@
 The Network Incident Investigator is now a **fully modular, pluggable platform** that can be deployed across different frontends, integrated with various LLM providers, and connected to multiple data sources.
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                   PLUGGABLE ARCHITECTURE                     │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │  FRONTEND LAYER (Pluggable)                          │   │
-│  │  ├─ Streamlit (web UI)                              │   │
-│  │  ├─ Flask (REST API + web UI)                       │   │
-│  │  ├─ CLI (command-line interface)                    │   │
-│  │  ├─ React/Vue (JavaScript SPA)                      │   │
-│  │  └─ Custom implementation (implement IFrontend)     │   │
-│  └──────────────────────────────────────────────────────┘   │
-│                         ↓                                     │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │  REST API (Backend - Always Available)               │   │
-│  │  ├─ /api/data/upload (POST)                         │   │
-│  │  ├─ /api/data/sample (POST)                         │   │
-│  │  ├─ /api/anomaly/detect (POST)                      │   │
-│  │  ├─ /api/genai/explain (POST)                       │   │
-│  │  └─ /api/summary (GET)                              │   │
-│  └──────────────────────────────────────────────────────┘   │
-│                         ↓                                     │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │  SERVICES LAYER                                      │   │
-│  │  ├─ Anomaly Detection (4 algorithms)                │   │
-│  │  ├─ GenAI Reasoning (pluggable providers)           │   │
-│  │  └─ Context Building                                │   │
-│  └──────────────────────────────────────────────────────┘   │
-│                         ↓                                     │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │  DATA SOURCE LAYER (Pluggable)                       │   │
-│  │  ├─ CSV files                                       │   │
-│  │  ├─ REST APIs                                       │   │
-│  │  ├─ SQL Databases (PostgreSQL, MySQL, etc.)        │   │
-│  │  ├─ Streaming (Kafka, Kinesis, Pub/Sub)            │   │
-│  │  ├─ Cloud Storage (S3, GCS, Azure)                 │   │
-│  │  └─ Custom implementation (implement IDataSource)   │   │
-│  └──────────────────────────────────────────────────────┘   │
-│                                                              │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │  GENAI PROVIDERS (Pluggable)                         │   │
-│  │  ├─ Ollama (Local - Default)                        │   │
-│  │  ├─ OpenAI (Cloud - Fallback)                       │   │
-│  │  ├─ Google Vertex AI (Enterprise)                   │   │
-│  │  ├─ Azure OpenAI (Enterprise)                       │   │
-│  │  └─ Custom implementation (implement ILLMProvider)  │   │
-│  └──────────────────────────────────────────────────────┘   │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│              PLUGGABLE ARCHITECTURE (With Governance)             │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │  FRONTEND LAYER (Pluggable)                               │  │
+│  │  ├─ Streamlit (web UI)                                   │  │
+│  │  ├─ Flask (REST API + web UI)                            │  │
+│  │  ├─ CLI (command-line interface)                         │  │
+│  │  ├─ React/Vue (JavaScript SPA)                           │  │
+│  │  └─ Custom (implement IFrontend)                         │  │
+│  └────────────────────────────────────────────────────────────┘  │
+│                            ↓                                      │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │  REST API (Backend - Always Available)                    │  │
+│  │  Data:      /api/data/*                                  │  │
+│  │  Anomaly:   /api/anomaly/*                               │  │
+│  │  GenAI:     /api/genai/*                                 │  │
+│  │  Metrics:   /api/metrics, /api/metrics/* (NEW)          │  │
+│  │  Health:    /api/health (NEW - detailed)                 │  │
+│  │  Governance:/api/governance/* (NEW)                      │  │
+│  └────────────────────────────────────────────────────────────┘  │
+│                            ↓                                      │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │  GOVERNANCE & MONITORING LAYER (NEW)                      │  │
+│  │  ├─ Logging (structured traces)                          │  │
+│  │  ├─ Evaluation (quality, drift, hallucination)           │  │
+│  │  ├─ Observability (metrics, latency, costs)              │  │
+│  │  ├─ Governance (RBAC, audit, PII scrubbing)             │  │
+│  │  └─ Monitoring (health checks, failover)                 │  │
+│  └────────────────────────────────────────────────────────────┘  │
+│                            ↓                                      │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │  SERVICES LAYER                                           │  │
+│  │  ├─ Anomaly Detection (4 algorithms)                     │  │
+│  │  ├─ GenAI Reasoning (pluggable providers)                │  │
+│  │  └─ Context Building                                     │  │
+│  └────────────────────────────────────────────────────────────┘  │
+│                            ↓                                      │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │  DATA SOURCE LAYER (Pluggable)                            │  │
+│  │  ├─ CSV files                                            │  │
+│  │  ├─ REST APIs (Backend APIs)                             │  │
+│  │  ├─ SQL Databases (PostgreSQL, MySQL)                    │  │
+│  │  ├─ Streaming (Kafka, Kinesis, Pub/Sub)                  │  │
+│  │  ├─ Cloud Storage (S3, GCS, Azure)                       │  │
+│  │  └─ Custom (implement DataSource)                        │  │
+│  └────────────────────────────────────────────────────────────┘  │
+│                                                                   │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │  GENAI PROVIDERS (Pluggable)                              │  │
+│  │  ├─ Ollama (Local - Default)                             │  │
+│  │  ├─ OpenAI (Cloud - Fallback)                            │  │
+│  │  ├─ Google Vertex AI (Enterprise)                        │  │
+│  │  ├─ Azure OpenAI (Enterprise)                            │  │
+│  │  └─ Custom (implement LLMProvider)                       │  │
+│  └────────────────────────────────────────────────────────────┘  │
+│                                                                   │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -669,6 +679,136 @@ psql postgresql://user:pass@localhost/db -c "SELECT 1"
 
 ---
 
+## Governance & Monitoring Layer (NEW)
+
+The platform now includes enterprise-grade governance and monitoring built into every layer.
+
+### Architecture Integration
+
+```
+All Data Sources → Governance Layer → All Services
+                   ├─ Structured Logging (with trace IDs)
+                   ├─ Audit Logging (immutable trail)
+                   ├─ Quality Evaluation (metrics, drift)
+                   ├─ Observability (latency, costs)
+                   ├─ Access Control (RBAC)
+                   ├─ PII Scrubbing (automatic masking)
+                   └─ Health Monitoring (service checks)
+```
+
+### Five Core Capabilities
+
+1. **Centralized Logging**
+   - Structured JSON logs with trace IDs
+   - Request tracing across services
+   - Performance timing (PerformanceTimer)
+   - Multi-backend support (file, ELK-ready)
+
+2. **Evaluation Layer**
+   - Anomaly detection quality metrics (precision, recall, F1)
+   - LLM hallucination detection
+   - Data drift detection (PSI)
+   - False positive analysis
+
+3. **Observability**
+   - Real-time platform metrics
+   - Latency tracking (p50, p95, p99)
+   - Token usage per provider
+   - Cost estimation & tracking
+   - Error rate distribution
+
+4. **Governance**
+   - Role-Based Access Control (RBAC) with 4 roles
+   - Immutable audit trail (11 action types)
+   - Automatic PII detection & masking
+   - API key management & verification
+   - Permission checking
+
+5. **Health Monitoring**
+   - Service health checks (4 services)
+   - Automatic provider failover
+   - Graceful degradation
+   - Meta-monitoring
+
+### Configuration Files
+
+```yaml
+# governance/access_policies.yaml
+roles:
+  viewer:
+    permissions: [view_metrics]
+  analyst:
+    permissions: [view_metrics, run_detection, upload_data]
+  admin:
+    permissions: [all]
+
+rate_limiting:
+  analyst: 300 requests/minute
+  admin: 1000 requests/minute
+```
+
+```yaml
+# governance/audit_rules.yaml
+audit_events:
+  run_anomaly_detection:
+    retention_days: 365
+    log_details: [metrics, anomalies_detected]
+  
+alerts:
+  unauthorized_access:
+    severity: critical
+    action: alert_admin
+```
+
+### API Endpoints
+
+```
+# Health & Observability
+GET  /api/health                # Service health status
+GET  /api/metrics               # Platform metrics
+GET  /api/metrics/latency       # Latency stats
+GET  /api/metrics/tokens        # Token usage & costs
+GET  /api/metrics/errors        # Error statistics
+
+# Governance
+GET  /api/governance/users      # List users (admin)
+GET  /api/governance/audit-logs # Audit trail (admin)
+
+# Headers
+X-User: alice@example.com       # User identity
+X-Trace-ID: req_abc123          # Request tracing
+```
+
+### Usage Examples
+
+```python
+# Structured logging with tracing
+from services.logging import get_logger, PerformanceTimer
+
+logger = get_logger("my_service")
+trace_id = "req_abc123"
+
+with PerformanceTimer(logger, "operation", "module", trace_id) as timer:
+    result = do_work()
+    logger.info("Work completed", latency_ms=timer.elapsed_ms)
+
+# Quality evaluation
+from services.evaluation import AnomalyQualityEvaluator
+
+evaluator = AnomalyQualityEvaluator()
+metrics = evaluator.evaluate(y_true, y_pred)
+print(f"Precision: {metrics.precision:.2%}, Recall: {metrics.recall:.2%}")
+
+# Health monitoring
+from services.monitoring import get_health_monitor
+
+hm = get_health_monitor()
+status = hm.check_all_services()
+print(f"Overall: {status['overall_status']}")
+```
+
+---
+
 ## Summary
 
 The Network Incident Investigator is **enterprise-grade, fully modular, and infinitely extensible**:
@@ -676,7 +816,10 @@ The Network Incident Investigator is **enterprise-grade, fully modular, and infi
 - **Multiple frontends**: Streamlit, Flask, CLI, React, or your custom implementation
 - **Multiple LLM providers**: Ollama, OpenAI, Vertex AI, Azure, or your custom provider
 - **Multiple data sources**: CSV, REST API, Database, Streaming, Cloud Storage, or your custom source
+- **Governance & Monitoring**: Structured logging, RBAC, audit trails, health checks, failover
 - **Scalable architecture**: Backend/Frontend separation enables independent scaling
-- **Production-ready**: Health checks, fallbacks, error handling, logging
+- **Production-ready**: Compliance (GDPR, SOC2), security, observability, error handling
 
 Choose your deployment based on your needs. The architecture supports everything from **local development** to **enterprise-scale deployments**.
+
+For detailed governance guidance, see [GOVERNANCE_AND_MONITORING.md](GOVERNANCE_AND_MONITORING.md)

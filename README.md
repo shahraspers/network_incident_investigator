@@ -38,6 +38,17 @@ A modular, scalable system for detecting network anomalies and providing AI-driv
 - Data upload & management
 - Anomaly detection endpoints
 - GenAI explanation service
+- Metrics & observability endpoints
+- Governance & access control endpoints
+
+✅ **Enterprise Governance & Monitoring**
+- Centralized logging with trace IDs
+- Quality evaluation (precision, recall, hallucinations)
+- Real-time observability metrics
+- Role-Based Access Control (RBAC) 
+- Immutable audit trails
+- PII detection & masking
+- Service health checks with failover
 
 ---
 
@@ -50,27 +61,44 @@ telus_rec_interview_2606/
 ├── frontend/
 │   └── app.py                 # Streamlit web UI
 ├── backend/
-│   ├── api.py                 # FastAPI REST API
-│   └── data_loader.py         # Pluggable data source loaders
+│   ├── api.py                 # FastAPI REST API (with governance)
+│   └── data_loader.py         # Pluggable data sources
 ├── services/
 │   ├── anomaly_detection/
-│   │   ├── kpi_detector.py   # Main anomaly detection service
-│   │   └── detector.py        # Alternative detectors
-│   └── genai_reasoning/
-│       ├── llm_client.py      # Provider-agnostic LLM client
-│       ├── reasoner.py        # Legacy reasoner module
-│       └── context_builder.py # Anomaly context building
+│   │   ├── kpi_detector.py   # Anomaly detection service
+│   │   └── detector.py        # Detection algorithms
+│   ├── genai_reasoning/
+│   │   ├── llm_client.py      # LLM provider client
+│   │   ├── reasoner.py        # GenAI reasoning
+│   │   └── context_builder.py # Context building
+│   ├── logging/               # Structured logging
+│   │   └── structured_logger.py
+│   ├── evaluation/            # Quality & drift metrics
+│   │   ├── anomaly_metrics.py
+│   │   ├── llm_quality.py
+│   │   └── drift_detection.py
+│   ├── observability/         # Platform metrics
+│   │   └── metrics_collector.py
+│   ├── governance/            # RBAC, audit, security
+│   │   ├── access_control.py
+│   │   ├── audit_logger.py
+│   │   └── pii_scrubbing.py
+│   └── monitoring/            # Health & failover
+│       └── health_monitor.py
+├── governance/                # Configuration
+│   ├── access_policies.yaml
+│   └── audit_rules.yaml
 ├── data/
-│   ├── cell_site_kpi_generator.py   # Synthetic data generator
-│   └── synthetic_kpi_generator.py   # Legacy generator
-├── config/
-│   ├── __init__.py            # Configuration management
-│   └── settings.py            # Legacy settings
-├── tests/
-│   └── test_services.py       # Unit tests
-├── requirements.txt           # Python dependencies
-├── .env.example              # Environment template
-└── README.md                 # This file
+│   ├── cell_site_kpi_generator.py
+│   └── synthetic_kpi_generator.py
+├── logs/
+│   ├── app.log                # Structured logs
+│   └── audit.jsonl            # Audit trail
+├── requirements.txt
+├── .env.example
+├── GOVERNANCE_AND_MONITORING.md
+├── GOVERNANCE_IMPLEMENTATION_SUMMARY.md
+└── README.md
 ```
 
 ### Data Flow
@@ -98,16 +126,31 @@ CSV/Backend/Stream
      └─→ UI/API (Results)
 ```
 
-### Component Interactions
+### Complete System Architecture
 
 ```
-Frontend (Streamlit)
+DATA SOURCES: CSV | Synthetic | Backend API | Streaming
+              ↓
+         BACKEND API (FastAPI)
+         + Governance Integration
+         + Structured Logging  
+         + Metrics Collection
+              ↓
+    ┌─────────┴──────────┐
+    ↓                    ↓
+ANOMALY DETECTION    GOVERNANCE & MONITORING
+├─ Detectors         ├─ RBAC
+├─ Quality Metrics   ├─ Audit Logging
+├─ Drift Detection   ├─ PII Scrubbing
+└─ LLM Analysis      ├─ Health Checks
+    ↓                └─ Failover
+GenAI REASONING
+├─ Ollama (local)
+├─ OpenAI (cloud)
+├─ Vertex AI
+└─ Azure OpenAI
     ↓
-Backend API (FastAPI)
-    ↓
-Data Loader → Anomaly Detector → Context Builder → LLM Client
-    ↓
-Database/Export
+STREAMLIT UI + REST API
 ```
 
 ---
@@ -176,7 +219,59 @@ streamlit run frontend/app.py
 
 ---
 
-## 📊 Data Format
+## � Governance & Monitoring
+
+The platform includes **enterprise-grade governance and monitoring capabilities**:
+
+### Five Core Capabilities
+
+1. **Centralized Logging** - Structured JSON logs with trace IDs
+2. **Evaluation Layer** - Quality metrics, drift detection, hallucination analysis
+3. **Observability** - Real-time platform metrics (latency, costs, errors)
+4. **Governance** - RBAC, audit trails, PII scrubbing
+5. **Health Monitoring** - Service health checks, automatic failover
+
+### New API Endpoints
+
+```
+Observability:
+GET  /api/health                    # Service health status
+GET  /api/metrics                   # Platform metrics
+GET  /api/metrics/latency           # Latency stats (p50, p95, p99)
+GET  /api/metrics/tokens            # Token usage & costs
+GET  /api/metrics/errors            # Error statistics
+
+Governance:
+GET  /api/governance/users          # List users (admin only)
+GET  /api/governance/audit-logs     # Query audit trail
+```
+
+### Usage Examples
+
+```python
+# Structured logging with tracing
+from services.logging import get_logger
+logger = get_logger("my_service")
+logger.info("Event occurred", trace_id="abc123", module="detector")
+
+# Quality evaluation
+from services.evaluation import AnomalyQualityEvaluator
+evaluator = AnomalyQualityEvaluator()
+metrics = evaluator.evaluate(y_true, y_pred)
+print(f"Precision: {metrics.precision:.2%}, Recall: {metrics.recall:.2%}")
+
+# Check platform health
+from services.monitoring import get_health_monitor
+hm = get_health_monitor()
+status = hm.check_all_services()
+print(f"Overall: {status['overall_status']}")
+```
+
+For detailed documentation, see [GOVERNANCE_AND_MONITORING.md](GOVERNANCE_AND_MONITORING.md)
+
+---
+
+## �📊 Data Format
 
 ### Expected CSV Columns
 

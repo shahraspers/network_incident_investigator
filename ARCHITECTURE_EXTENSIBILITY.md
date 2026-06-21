@@ -700,6 +700,109 @@ result = provider.explain_anomaly(context)
 
 ---
 
+## 9. Governance & Monitoring Extensibility (NEW)
+
+### Current Architecture
+
+The platform includes enterprise governance that can be extended:
+
+- **Logging**: Implement custom StructuredLogger backends
+- **Access Control**: Extend Role/Permission system
+- **Audit Logging**: Add custom audit sinks
+- **PII Scrubbing**: Add custom PII patterns
+- **Health Monitoring**: Add custom health checks
+- **Metrics**: Add custom metrics collectors
+
+### Extending Audit Logging
+
+**Add custom audit actions:**
+
+```python
+from services.governance.audit_logger import get_audit_logger, AuditAction
+
+# Custom action
+custom_action = AuditAction("custom_event")
+
+# Use it
+audit = get_audit_logger()
+audit.log_action(
+    actor="user@example.com",
+    action=custom_action,
+    resource_type="custom_resource",
+    resource_id="id_123",
+    details={"custom_field": "value"}
+)
+```
+
+### Extending PII Detection
+
+**Add custom PII patterns:**
+
+```python
+from services.governance.pii_scrubbing import PIIScrubber
+import re
+
+# Add custom pattern for credit card alternative format
+PIIScrubber.PII_PATTERNS["credit_card_alt"] = r"\d{4}\s\d{4}\s\d{4}\s\d{4}"
+PIIScrubber.PII_PATTERNS["employee_id"] = r"EMP-\d{8}"
+
+# Use scrubber
+scrubbed = PIIScrubber.scrub_text("Contact employee EMP-12345678 for details")
+```
+
+### Extending Health Monitoring
+
+**Add custom health checks:**
+
+```python
+from services.monitoring import HealthMonitor, ServiceStatus
+
+class CustomHealthMonitor(HealthMonitor):
+    """Extended health monitor with custom checks"""
+    
+    def check_database_connection(self) -> ServiceStatus:
+        """Check database connectivity"""
+        try:
+            # Implement custom check
+            connection_ok = test_database_connection()
+            return ServiceStatus(
+                status="healthy" if connection_ok else "unhealthy",
+                response_time_ms=10.5
+            )
+        except Exception as e:
+            return ServiceStatus(status="unhealthy", error=str(e))
+
+# Use custom monitor
+monitor = CustomHealthMonitor()
+status = monitor.check_database_connection()
+```
+
+### Extending Metrics Collection
+
+**Add custom metrics:**
+
+```python
+from services.observability.metrics_collector import get_metrics_collector
+
+metrics = get_metrics_collector()
+
+# Record custom metric
+metrics.record_latency(
+    module="custom_module",
+    operation="custom_operation",
+    latency_ms=42.5,
+    success=True
+)
+
+# Get custom metrics
+custom_stats = metrics.get_latency_stats(
+    module="custom_module",
+    minutes=60
+)
+```
+
+---
+
 ## 10. Best Practices
 
 1. **Always implement interfaces** - Use ABC for contracts
@@ -723,6 +826,9 @@ The Network Incident Investigator is built with **separation of concerns** and *
 - **LLM Providers**: Implement `ILLMProvider` for any AI service
 - **Data Sources**: Implement `IDataSource` for any data repository
 - **Detection**: Extend `AnomalyDetector` for custom algorithms
+- **Governance**: Extend audit, PII, monitoring for compliance needs
 - **Configuration**: Use registry patterns for pluggable components
 
-This architecture enables **true scalability and flexibility** for enterprise deployments.
+This architecture enables **true scalability, flexibility, and compliance** for enterprise deployments.
+
+For governance guidance, see [GOVERNANCE_AND_MONITORING.md](GOVERNANCE_AND_MONITORING.md)

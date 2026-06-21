@@ -506,6 +506,75 @@ python quickstart.py demo
 
 ---
 
+## Governance & Monitoring (NEW)
+
+The platform now includes enterprise-grade governance features:
+
+### Check Platform Health
+
+```bash
+# Detailed health status
+curl http://localhost:8000/api/health
+
+# Platform metrics
+curl http://localhost:8000/api/metrics
+
+# Latency stats
+curl http://localhost:8000/api/metrics/latency?module=anomaly_detector
+
+# Token usage & costs
+curl http://localhost:8000/api/metrics/tokens
+
+# Error statistics
+curl http://localhost:8000/api/metrics/errors
+```
+
+### Access Control
+
+The platform supports Role-Based Access Control (RBAC):
+
+```python
+from services.governance import get_access_controller, Role
+
+ac = get_access_controller()
+
+# Create users with roles
+analyst = ac.create_user("alice@example.com", Role.ANALYST)
+admin = ac.create_user("bob@example.com", Role.ADMIN)
+
+# Check permissions
+if ac.check_permission("alice@example.com", "run_detection"):
+    # Alice can run detection
+    pass
+```
+
+### Audit Logging
+
+All sensitive actions are automatically logged:
+
+```bash
+# Query audit logs
+curl "http://localhost:8000/api/governance/audit-logs?actor=alice@example.com"
+
+# Returns: all actions by alice with timestamps, status, details
+```
+
+### Request Tracing
+
+All requests support tracing via headers:
+
+```bash
+curl -X POST http://localhost:8000/api/anomaly/detect \
+  -H "X-User: alice@example.com" \
+  -H "X-Trace-ID: req_abc123" \
+  -H "Content-Type: application/json" \
+  -d '{"metrics": ["rsrp"]}'
+```
+
+For detailed governance guidance, see [GOVERNANCE_AND_MONITORING.md](GOVERNANCE_AND_MONITORING.md)
+
+---
+
 ## Next Steps
 
 1. ✅ Explore sample data
@@ -519,7 +588,10 @@ python quickstart.py demo
 
 ## Documentation
 
-- **README.md** - Full documentation
+- **README.md** - Full project documentation
+- **GOVERNANCE_AND_MONITORING.md** - Enterprise governance guide (NEW)
+- **PLUGGABLE_ARCHITECTURE.md** - System architecture & extensibility
+- **ARCHITECTURE_EXTENSIBILITY.md** - How to extend each component
 - **PROJECT_SUMMARY.md** - Project overview
 - **MANIFEST.md** - File structure
 - **Code comments** - Implementation details
