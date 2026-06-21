@@ -200,19 +200,23 @@ streamlit run frontend/app.py
 #### Option 2: Backend API
 
 ```bash
-python -m backend.api
+# Start with uvicorn (recommended)
+uvicorn backend.api:app --host 0.0.0.0 --port 8000 --reload
+
+# OR with Python module
+python -m uvicorn backend.api:app --host 0.0.0.0 --port 8000 --reload
 ```
-- Starts at `http://localhost:8000`
+- Runs at `http://localhost:8000`
 - API docs: `http://localhost:8000/docs`
 
-#### Option 3: Run Both
+#### Option 3: Run Both Simultaneously
 
-Terminal 1:
+Terminal 1 (Backend API on port 8000):
 ```bash
-python -m backend.api
+uvicorn backend.api:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-Terminal 2:
+Terminal 2 (Frontend UI on port 8501):
 ```bash
 streamlit run frontend/app.py
 ```

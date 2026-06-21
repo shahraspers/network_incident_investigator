@@ -64,16 +64,22 @@ streamlit run frontend/app.py
 
 **Option B: REST API**
 ```bash
-python -m backend.api
+# Start with uvicorn (recommended)
+uvicorn backend.api:app --host 0.0.0.0 --port 8000 --reload
+
+# OR alternatively:
+python -m uvicorn backend.api:app --host 0.0.0.0 --port 8000 --reload
+
 # Available at http://localhost:8000
-# Docs at http://localhost:8000/docs
+# API Docs: http://localhost:8000/docs
+# OpenAPI Schema: http://localhost:8000/openapi.json
 ```
 
-**Option C: Quick Start Script**
+**Option C: Quick Start Script** (if available)
 ```bash
 python quickstart.py setup      # Install & setup
-python quickstart.py frontend   # Run UI
-python quickstart.py backend    # Run API
+python quickstart.py frontend   # Run UI (Streamlit on 8501)
+python quickstart.py backend    # Run API (Uvicorn on 8000)
 python quickstart.py demo       # Quick demo
 ```
 
@@ -509,6 +515,13 @@ python quickstart.py demo
 ## Governance & Monitoring (NEW)
 
 The platform now includes enterprise-grade governance features:
+
+**IMPORTANT**: Make sure the backend API is running first:
+```bash
+uvicorn backend.api:app --host 0.0.0.0 --port 8000 --reload
+```
+
+Then in another terminal, you can test governance endpoints:
 
 ### Check Platform Health
 
