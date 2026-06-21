@@ -1,3 +1,29 @@
+## 📋 Flexible Architecture Overview
+
+This system is **completely frontend-agnostic** and **provider-agnostic**:
+
+```
+┌─────────────────────────────────────┐
+│  Multiple Frontend Options          │
+├─────────────────────────────────────┤
+│ • Streamlit (current)               │
+│ • React.js / Vue.js                 │
+│ • Mobile (React Native / Flutter)   │
+│ • Custom (any platform)             │
+└────────────┬────────────────────────┘
+             │ HTTP REST API
+             ↓
+┌─────────────────────────────────────┐
+│  FastAPI Backend (Scalable)         │
+├─────────────────────────────────────┤
+│ • Stateless services                │
+│ • Runs on Kubernetes                │
+│ • Multi-instance support            │
+└────────────┬────────────────────────┘
+```
+
+---
+
 # 🚀 Getting Started - Network Incident Investigator
 
 **5-minute setup guide**
@@ -179,13 +205,219 @@ OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_MODEL=llama2
 ```
 
-### Using OpenAI
+### Using OpenAI (Cloud)
 Edit `.env`:
 ```
 GENAI_PROVIDER=openai
 OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-3.5-turbo
 ```
+
+### Using Azure OpenAI (Enterprise)
+Edit `.env`:
+```
+GENAI_PROVIDER=azure_openai
+AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com
+AZURE_OPENAI_API_KEY=xxx
+AZURE_OPENAI_DEPLOYMENT_ID=deployment-name
+```
+
+### Using Google Vertex AI
+Edit `.env`:
+```
+GENAI_PROVIDER=vertex_ai
+GCP_PROJECT_ID=your-project
+GCP_LOCATION=us-central1
+```
+
+### Adding Custom LLM Providers
+
+The system supports **pluggable LLM providers**. To add a new provider:
+
+1. **Create provider class** in `services/genai_reasoning/llm_client.py`:
+
+```python
+class CustomLLMProvider(BaseLLMProvider):
+    def __init__(self, config: Dict):
+        self.endpoint = config['endpoint']
+    
+    def health_check(self) -> bool:
+        try:
+            response = requests.get(f"{self.endpoint}/health")
+            return response.status_code == 200
+        except:
+            return False
+    
+    def explain_anomaly(self, context: Dict) -> Dict:
+        response = requests.post(
+            f"{self.endpoint}/analyze",
+            json={'context': context}
+        )
+        return response.json()
+```
+
+2. **Register in LLMClient**: Update `_initialize_provider()` method
+3. **Use via environment**:
+   ```
+   GENAI_PROVIDER=custom
+   CUSTOM_ENDPOINT=https://your-api.com
+   ```
+
+---
+
+## 🎨 Frontend Alternatives (Not Just Streamlit)
+
+The backend **REST API** (`backend/api.py`) is completely independent, so you can use ANY frontend:
+
+### Option 1: Streamlit (Current)
+```bash
+streamlit run frontend/app.py
+```
+
+### Option 2: React.js Frontend
+
+```bash
+# Create React app
+npx create-react-app nii-frontend
+cd nii-frontend
+
+# Install dependencies
+npm install axios plotly.js
+
+# Create API client (src/api.js)
+import axios from 'axios';
+const API = axios.create({ baseURL: 'http://localhost:8000' });
+export const detectAnomalies = (metrics, method) =>
+  API.post('/api/anomaly/detect', {metrics, method});
+
+# npm start (runs on port 3000)
+```
+
+### Option 3: Vue.js Frontend
+
+```bash
+npm create vue@latest nii-frontend
+cd nii-frontend
+npm install
+
+# Create composable (src/composables/useAPI.js)
+import axios from 'axios'
+const API = axios.create({ baseURL: 'http://localhost:8000' })
+export function useDetection() {
+  return { runDetection: (metrics) => API.post('/api/anomaly/detect', {metrics}) }
+}
+```
+
+### Option 4: Mobile App (React Native)
+
+```javascript
+// API wrapper for React Native
+export const API_BASE = 'http://backend:8000';
+
+export async function detectAnomalies(metrics) {
+  const response = await fetch(`${API_BASE}/api/anomaly/detect`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({metrics, method: 'zscore'})
+  });
+  return response.json();
+}
+```
+
+### Option 5: Desktop App (Python + PyQt)
+
+```python
+import requests
+from PyQt5.QtWidgets import QMainWindow
+
+class NIIApp(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.api = requests.Session()
+    
+    def run_detection(self):
+        response = self.api.post(
+            'http://localhost:8000/api/anomaly/detect',
+            json={'metrics': ['rsrp'], 'method': 'zscore'}
+        )
+        return response.json()
+```
+
+### Option 6: Any Custom Frontend (JavaScript, C#, Java, etc.)
+
+All you need is HTTP + JSON support:
+
+```bash
+# JavaScript (Node.js/Express)
+const response = await fetch('http://localhost:8000/api/anomaly/detect', {
+  method: 'POST',
+  headers: {'Content-Type': 'application/json'},
+  body: JSON.stringify({metrics: ['rsrp'], method: 'zscore'})
+});
+
+# Python (requests)
+import requests
+requests.post('http://localhost:8000/api/anomaly/detect', 
+  json={'metrics': ['rsrp'], 'method': 'zscore'})
+
+# Java (HttpClient)
+HttpClient client = HttpClient.newHttpClient();
+HttpRequest request = HttpRequest.newBuilder()
+  .uri(new URI("http://localhost:8000/api/anomaly/detect"))
+  .POST(BodyPublishers.ofString("{...}"))
+  .build();
+
+# C# (HttpClient)
+using (HttpClient client = new HttpClient()) {
+  var response = await client.PostAsync(
+    "http://localhost:8000/api/anomaly/detect",
+    new StringContent("{...}", Encoding.UTF8, "application/json"));
+}
+```
+
+---
+
+## 📊 Data Source Integration
+
+The system supports **pluggable data sources**:
+
+### Source 1: CSV Files (Default)
+```bash
+# Upload via UI or API
+curl -X POST -F "file=@data.csv" http://localhost:8000/api/data/upload
+```
+
+### Source 2: Backend API
+Implement `BackendAPIDataSource` in `backend/data_loader.py`:
+```python
+source = DataSourceFactory.create('api', {
+    'endpoint': 'https://api.telus.com/kpi',
+    'auth_token': 'xxx'
+})
+df = source.load()
+```
+
+### Source 3: Database (PostgreSQL, MySQL)
+```python
+source = DataSourceFactory.create('database', {
+    'connection_string': 'postgresql://user:pass@host:5432/kpi',
+    'query': 'SELECT * FROM cell_metrics'
+})
+df = source.load()
+```
+
+### Source 4: Kafka Streaming
+```python
+source = DataSourceFactory.create('kafka', {
+    'bootstrap_servers': 'kafka:9092',
+    'topic': 'network-kpi'
+})
+df = source.load()  # Collects batch
+```
+
+---
+
+## ⚙️ Configuration
 
 ---
 
