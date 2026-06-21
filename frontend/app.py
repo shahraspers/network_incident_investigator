@@ -2,6 +2,13 @@
 Streamlit UI for Network Incident Investigator.
 5-section linear workflow: Data -> Config -> Detection -> Analysis -> Summary
 Frontend is independent via REST API - can be replaced with React/Vue/Mobile.
+
+This UI consumes REST API endpoints from the FastAPI backend (port 8000).
+All data operations go through HTTP API, enabling:
+- Governance & audit logging
+- Metrics collection & observability
+- Multi-user access control
+- Provider-agnostic architecture
 """
 import streamlit as st
 import pandas as pd
@@ -11,6 +18,8 @@ import plotly.graph_objects as go
 from datetime import datetime
 from pathlib import Path
 import logging
+import requests
+import uuid
 
 # Set page config
 st.set_page_config(
@@ -24,22 +33,57 @@ st.set_page_config(
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Import core modules
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# ============================================================================
+# API CONFIGURATION
+# ============================================================================
 
-from services.anomaly_detection.kpi_detector import detect_anomalies
-from services.genai_reasoning.llm_client import LLMClient
-from services.genai_reasoning.context_builder import build_anomaly_context
-from data.cell_site_kpi_generator import generate_synthetic_kpi_data
+API_BASE_URL = "http://localhost:8000"
+API_TIMEOUT = 60  # seconds
+
+# Generate trace ID for request tracking
+def get_trace_id():
+    """Generate unique trace ID for request correlation"""
+    if "trace_id" not in st.session_state:
+        st.session_state.trace_id = f"ui_{uuid.uuid4().hex[:12]}"
+    return st.session_state.trace_id
+
+# Get current user (can be enhanced with authentication)
+def get_current_user():
+    """Get current user for audit logging"""
+    return st.session_state.get("user_email", "anonymous")
 
 
 # ============================================================================
-# PAGE TITLE
+# PAGE TITLE & SIDEBAR
 # ============================================================================
 
 st.title("Network Incident Investigator")
 st.markdown("GenAI-powered anomaly detection and root cause analysis for network KPI metrics")
+
+# Sidebar: API Status & Configuration
+with st.sidebar:
+    st.header("Configuration")
+    
+    # API Status Check
+    try:
+        health = requests.get(f"{API_BASE_URL}/api/health", timeout=2)
+        if health.status_code == 200:
+            st.success("✅ API Connected (port 8000)")
+        else:
+            st.error("❌ API Error")
+    except Exception as e:
+        st.error(f"❌ API Offline: {str(e)[:50]}")
+    
+    # User email for audit logging
+    st.text_input(
+        "User Email (for audit logging):",
+        value=st.session_state.get("user_email", "analyst@example.com"),
+        key="user_email"
+    )
+    
+    # Trace ID
+    st.text(f"Trace ID: {get_trace_id()[:16]}...")
+
 st.markdown("---")
 
 
@@ -70,11 +114,31 @@ with col2:
         
         if uploaded_file:
             try:
-                df = pd.read_csv(uploaded_file)
-                st.session_state.df = df
-                st.success(f"Loaded {len(df)} rows")
+                # Upload via REST API
+                trace_id = get_trace_id()
+                files = {"file": (uploaded_file.name, uploaded_file)}
+                headers = {
+                    "X-User": get_current_user(),
+                    "X-Trace-ID": trace_id
+                }
+                
+                response = requests.post(
+                    f"{API_BASE_URL}/api/data/upload",
+                    files=files,
+                    headers=headers,
+                    timeout=API_TIMEOUT
+                )
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    st.session_state.df = None  # Clear local cache
+                    st.session_state.api_data_loaded = True
+                    st.success(f"✅ Uploaded {result['rows']} rows via API")
+                    st.info(f"Trace ID: {trace_id}")
+                else:
+                    st.error(f"Upload failed: {response.json().get('detail', 'Unknown error')}")
             except Exception as e:
-                st.error(f"Error loading file: {e}")
+                st.error(f"Error: {str(e)}")
     
     else:  # Backend Sample Data
         st.subheader("Backend Sample Datasets")
@@ -102,33 +166,48 @@ with col2:
         if st.button("Load Sample Data", key="load_sample"):
             with st.spinner(f"Generating {num_sites} sites x {num_hours} hours..."):
                 try:
-                    df = generate_synthetic_kpi_data(
-                        num_sites=num_sites,
-                        num_hours=num_hours,
-                        save_files=False
+                    trace_id = get_trace_id()
+                    headers = {
+                        "X-User": get_current_user(),
+                        "X-Trace-ID": trace_id
+                    }
+                    
+                    # Call API to generate synthetic data
+                    response = requests.post(
+                        f"{API_BASE_URL}/api/data/synthetic",
+                        json={
+                            "num_sites": num_sites,
+                            "num_hours": num_hours,
+                            "interval_minutes": 5
+                        },
+                        headers=headers,
+                        timeout=API_TIMEOUT
                     )
-                    st.session_state.df = df
-                    st.success(f"Generated {len(df)} rows")
+                    
+                    if response.status_code == 200:
+                        result = response.json()
+                        st.session_state.api_data_loaded = True
+                        st.session_state.data_summary = result
+                        st.success(f"✅ Generated {result['rows']} rows")
+                        st.info(f"Trace ID: {trace_id}")
+                    else:
+                        st.error(f"Generation failed: {response.json().get('detail', 'Unknown error')}")
+                        
                 except Exception as e:
-                    st.error(f"Error: {e}")
+                    st.error(f"Error: {str(e)}")
 
-# Load from session state if available
-if df is None and "df" in st.session_state:
-    df = st.session_state.df
-
-# Display data preview if loaded
-if df is not None:
-    with st.expander("Data Preview", expanded=False):
+# Display data loaded indicator
+if st.session_state.get("api_data_loaded"):
+    st.success("✅ Data loaded via API")
+    if "data_summary" in st.session_state:
+        summary = st.session_state.data_summary
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("Total Rows", len(df))
+            st.metric("Rows", summary.get("rows", "?"))
         with col2:
-            st.metric("Total Columns", len(df.columns))
+            st.metric("Sites", summary.get("sites", "?"))
         with col3:
-            if "site_id" in df.columns:
-                st.metric("Unique Sites", df["site_id"].nunique())
-        
-        st.dataframe(df.head(10), use_container_width=True)
+            st.metric("Hours", summary.get("hours", "?"))
 
 st.markdown("---")
 
@@ -145,13 +224,25 @@ anomaly_threshold = 3.0
 provider = "ollama_local"
 genai_config = {}
 
-if df is not None:
-    col1, col2, col3 = st.columns(3)
+if st.session_state.get("api_data_loaded"):
+    # Fetch available metrics from API
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/api/data/preview",
+            params={"limit": 1},
+            timeout=API_TIMEOUT
+        )
+        
+        if response.status_code == 200:
+            preview = response.json()
+            available_columns = preview.get("columns", [])
+            metric_cols = [col for col in available_columns if col not in ["timestamp", "site_id"]]
+        else:
+            metric_cols = ["rsrp", "rsrq", "sinr", "throughput_mbps", "latency_ms", "dropped_call_rate"]
+    except:
+        metric_cols = ["rsrp", "rsrq", "sinr", "throughput_mbps", "latency_ms", "dropped_call_rate"]
     
-    # Identify numeric columns for metrics
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    exclude_cols = ["timestamp"]
-    metric_cols = [col for col in numeric_cols if col not in exclude_cols]
+    col1, col2, col3 = st.columns(3)
     
     with col1:
         st.subheader("Metrics")
@@ -165,7 +256,8 @@ if df is not None:
         st.subheader("Detection Settings")
         detection_method = st.selectbox(
             "Detection Method:",
-            options=["zscore", "mad", "isolation_forest", "stl"]
+            options=["zscore", "mad", "isolation_forest", "stl"],
+            help="zscore: general purpose, mad: robust to outliers, isolation_forest: high-dimensional, stl: time-series"
         )
         
         anomaly_threshold = st.slider(
@@ -173,7 +265,8 @@ if df is not None:
             min_value=1.0,
             max_value=5.0,
             value=3.0,
-            step=0.5
+            step=0.5,
+            help="Higher = more conservative (fewer anomalies)"
         )
     
     with col3:
@@ -216,121 +309,107 @@ st.markdown("---")
 
 st.header("Section 3: Run Anomaly Detection")
 
-if df is not None and selected_metrics:
+if st.session_state.get("api_data_loaded") and selected_metrics:
     
     if st.button("Run Detection", key="run_detection", use_container_width=True):
-        with st.spinner("Running anomaly detection..."):
+        with st.spinner("Running anomaly detection via API..."):
             try:
-                result_df = detect_anomalies(
-                    df=df,
-                    metrics=selected_metrics,
-                    method=detection_method,
-                    config={"threshold": anomaly_threshold}
+                trace_id = get_trace_id()
+                headers = {
+                    "X-User": get_current_user(),
+                    "X-Trace-ID": trace_id
+                }
+                
+                # Call API to run detection
+                response = requests.post(
+                    f"{API_BASE_URL}/api/anomaly/detect",
+                    json={
+                        "metrics": selected_metrics,
+                        "method": detection_method,
+                        "threshold": anomaly_threshold,
+                        "window_size": 30
+                    },
+                    headers=headers,
+                    timeout=API_TIMEOUT
                 )
                 
-                st.session_state.result_df = result_df
-                st.session_state.selected_metrics = selected_metrics
-                st.session_state.provider = provider
-                st.session_state.genai_config = genai_config
-                st.success("Anomaly detection completed")
-                
+                if response.status_code == 200:
+                    detection_result = response.json()
+                    st.session_state.detection_result = detection_result
+                    st.session_state.selected_metrics = selected_metrics
+                    st.session_state.provider = provider
+                    st.session_state.genai_config = genai_config
+                    st.session_state.detection_method = detection_method
+                    st.success(f"✅ Detection completed")
+                    st.info(f"Trace ID: {trace_id}")
+                else:
+                    st.error(f"Detection failed: {response.json().get('detail', 'Unknown error')}")
+                    
             except Exception as e:
-                st.error(f"Error: {e}")
+                st.error(f"Error: {str(e)}")
                 logger.exception("Anomaly detection error")
     
     # Display detection results
-    if "result_df" in st.session_state:
-        result_df = st.session_state.result_df
+    if "detection_result" in st.session_state:
+        result = st.session_state.detection_result
         
         st.subheader("Detection Summary")
         
         col1, col2, col3, col4 = st.columns(4)
         
-        anomaly_count = result_df["is_anomaly"].sum() if "is_anomaly" in result_df.columns else 0
+        anomaly_count = result.get("anomalies_found", 0)
         
         with col1:
             st.metric("Total Anomalies", int(anomaly_count))
         
         with col2:
-            anomaly_rate = (anomaly_count / len(result_df) * 100) if len(result_df) > 0 else 0
+            anomaly_rate = result.get("anomaly_rate", 0.0)
             st.metric("Anomaly Rate", f"{anomaly_rate:.1f}%")
         
         with col3:
-            st.metric("Detection Method", detection_method.upper())
+            st.metric("Detection Method", result.get("detection_method", "?").upper())
         
         with col4:
-            st.metric("Rows Analyzed", len(result_df))
+            st.metric("Message", result.get("message", "Detection complete"))
         
-        # KPI Plots
-        st.subheader("KPI Plots with Anomalies")
+        # Fetch detailed anomaly results from API
+        st.subheader("Anomalous Events (from API)")
         
-        if "timestamp" in result_df.columns and "site_id" in result_df.columns:
-            unique_sites = sorted(result_df["site_id"].unique())
+        try:
+            response = requests.get(
+                f"{API_BASE_URL}/api/anomaly/results",
+                params={"limit": 100},
+                timeout=API_TIMEOUT
+            )
             
-            for metric in selected_metrics:
-                if metric in result_df.columns:
-                    fig = go.Figure()
-                    
-                    for site in unique_sites:
-                        site_data = result_df[result_df["site_id"] == site].copy()
-                        site_data = site_data.sort_values("timestamp")
-                        
-                        normal_mask = ~site_data["is_anomaly"] if "is_anomaly" in site_data.columns else [True] * len(site_data)
-                        fig.add_trace(go.Scatter(
-                            x=site_data[normal_mask]["timestamp"],
-                            y=site_data[normal_mask][metric],
-                            mode="lines+markers",
-                            name=f"Site {site} (Normal)",
-                            line=dict(width=2)
-                        ))
-                        
-                        if "is_anomaly" in site_data.columns:
-                            anomaly_mask = site_data["is_anomaly"]
-                            if anomaly_mask.any():
-                                fig.add_trace(go.Scatter(
-                                    x=site_data[anomaly_mask]["timestamp"],
-                                    y=site_data[anomaly_mask][metric],
-                                    mode="markers",
-                                    name=f"Site {site} (Anomaly)",
-                                    marker=dict(size=10, color="red", symbol="x")
-                                ))
-                    
-                    fig.update_layout(
-                        title=f"{metric.upper()} Over Time",
-                        xaxis_title="Timestamp",
-                        yaxis_title=metric,
-                        hovermode="x unified",
-                        height=400
+            if response.status_code == 200:
+                api_results = response.json()
+                total_anomalies = api_results.get("total_anomalies", 0)
+                anomalies = api_results.get("anomalies", [])
+                
+                if total_anomalies > 0:
+                    # Display anomalies table
+                    anomaly_df = pd.DataFrame(anomalies)
+                    st.dataframe(
+                        anomaly_df.head(50),
+                        use_container_width=True
                     )
                     
-                    st.plotly_chart(fig, use_container_width=True)
-        
-        # Anomalies table
-        st.subheader("Anomalous Events Table")
-        
-        if "is_anomaly" in result_df.columns:
-            anomaly_rows = result_df[result_df["is_anomaly"]].copy()
-            
-            if len(anomaly_rows) > 0:
-                display_cols = ["timestamp", "site_id"] + selected_metrics + [
-                    col for col in result_df.columns if "is_anomaly" in col or "anomaly_score" in col
-                ]
-                display_cols = [col for col in display_cols if col in result_df.columns]
-                
-                st.dataframe(
-                    anomaly_rows[display_cols].head(50),
-                    use_container_width=True
-                )
-                
-                csv = anomaly_rows.to_csv(index=False)
-                st.download_button(
-                    "Download Anomalies CSV",
-                    csv,
-                    file_name=f"anomalies_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv"
-                )
+                    # Download button
+                    csv = anomaly_df.to_csv(index=False)
+                    st.download_button(
+                        "Download Anomalies CSV",
+                        csv,
+                        file_name=f"anomalies_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                        mime="text/csv"
+                    )
+                else:
+                    st.info("No anomalies detected")
             else:
-                st.info("No anomalies detected")
+                st.warning("Could not fetch detailed results from API")
+                
+        except Exception as e:
+            st.warning(f"Could not fetch detailed results: {str(e)}")
 
 else:
     st.warning("Please load data and select metrics in Sections 1-2")
@@ -344,100 +423,127 @@ st.markdown("---")
 
 st.header("Section 4: GenAI Explanation")
 
-if "result_df" in st.session_state:
-    result_df = st.session_state.result_df
-    selected_metrics = st.session_state.get("selected_metrics", [])
-    provider = st.session_state.get("provider", "ollama_local")
-    genai_config = st.session_state.get("genai_config", {})
+if "detection_result" in st.session_state:
     
-    anomalies = result_df[result_df["is_anomaly"]] if "is_anomaly" in result_df.columns else pd.DataFrame()
-    
-    if len(anomalies) == 0:
-        st.info("No anomalies detected. Run detection first in Section 3.")
-    else:
-        col1, col2 = st.columns([2, 1])
+    # Fetch anomalies from API for selection
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/api/anomaly/results",
+            params={"limit": 1000},
+            timeout=API_TIMEOUT
+        )
         
-        with col1:
-            anomaly_idx = st.selectbox(
-                "Select an anomaly to explain:",
-                options=range(len(anomalies)),
-                format_func=lambda i: f"Row {i}: {anomalies.iloc[i].get('timestamp', 'N/A')} @ Site {anomalies.iloc[i].get('site_id', 'N/A')}"
-            )
+        if response.status_code == 200:
+            api_results = response.json()
+            anomalies = api_results.get("anomalies", [])
             
-            selected_anomaly = anomalies.iloc[anomaly_idx]
-        
-        with col2:
-            explain_button = st.button("Analyze with GenAI", key="analyze_genai", use_container_width=True)
-        
-        if explain_button:
-            with st.spinner("Generating GenAI analysis..."):
-                try:
-                    client = LLMClient(provider=provider, config=genai_config)
-                    
-                    context = build_anomaly_context(
-                        df=result_df,
-                        anomaly_row=selected_anomaly,
-                        metric_columns=selected_metrics
+            if len(anomalies) == 0:
+                st.info("No anomalies detected. Run detection first in Section 3.")
+            else:
+                col1, col2 = st.columns([2, 1])
+                
+                with col1:
+                    anomaly_idx = st.selectbox(
+                        "Select an anomaly to explain:",
+                        options=range(len(anomalies)),
+                        format_func=lambda i: f"Row {i}: {anomalies[i].get('timestamp', 'N/A')} @ Site {anomalies[i].get('site_id', 'N/A')}"
                     )
                     
-                    explanation = client.explain_anomaly(context)
+                    selected_anomaly = anomalies[anomaly_idx]
+                
+                with col2:
+                    explain_button = st.button("Analyze with GenAI", key="analyze_genai", use_container_width=True)
+                
+                if explain_button:
+                    with st.spinner("Generating GenAI analysis via API..."):
+                        try:
+                            trace_id = get_trace_id()
+                            headers = {
+                                "X-User": get_current_user(),
+                                "X-Trace-ID": trace_id
+                            }
+                            
+                            # Extract metric values from anomaly
+                            selected_metrics = st.session_state.get("selected_metrics", [])
+                            metrics_dict = {
+                                metric: float(selected_anomaly.get(metric, 0))
+                                for metric in selected_metrics
+                                if metric in selected_anomaly
+                            }
+                            
+                            # Call API to explain anomaly
+                            response = requests.post(
+                                f"{API_BASE_URL}/api/genai/explain",
+                                json={
+                                    "site_id": str(selected_anomaly.get("site_id", "unknown")),
+                                    "metrics": metrics_dict,
+                                    "provider": st.session_state.get("provider", "ollama_local")
+                                },
+                                headers=headers,
+                                timeout=API_TIMEOUT
+                            )
+                            
+                            if response.status_code == 200:
+                                explanation = response.json()
+                                st.session_state.explanation = explanation
+                                st.session_state.selected_anomaly = selected_anomaly
+                                st.success("✅ Analysis complete")
+                                st.info(f"Trace ID: {trace_id}")
+                            else:
+                                st.error(f"Analysis failed: {response.json().get('detail', 'Unknown error')}")
+                                
+                        except Exception as e:
+                            st.error(f"Error: {str(e)}")
+                            logger.exception("GenAI analysis error")
+                
+                # Display explanation
+                if "explanation" in st.session_state:
+                    explanation = st.session_state.explanation
+                    selected_anomaly = st.session_state.get("selected_anomaly", {})
                     
-                    st.session_state.explanation = explanation
-                    st.success("Analysis complete")
+                    st.subheader("Anomaly Details")
                     
-                except Exception as e:
-                    st.error(f"Error: {e}")
-                    logger.exception("GenAI analysis error")
-        
-        # Display explanation
-        if "explanation" in st.session_state:
-            explanation = st.session_state.explanation
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        st.metric("Site ID", selected_anomaly.get("site_id", "N/A"))
+                    
+                    with col2:
+                        st.write(f"**Timestamp:** {selected_anomaly.get('timestamp', 'N/A')}")
+                    
+                    with col3:
+                        severity = explanation.get("severity", "Unknown")
+                        st.metric("Severity", severity)
+                    
+                    with col4:
+                        confidence = explanation.get("confidence", 0)
+                        st.metric("Confidence", f"{confidence:.0%}")
+                    
+                    st.divider()
+                    
+                    st.subheader("Summary")
+                    st.write(explanation.get("summary", "No summary available"))
+                    
+                    st.subheader("Likely Causes (Ranked)")
+                    causes = explanation.get("likely_causes", [])
+                    if causes:
+                        for i, cause in enumerate(causes, 1):
+                            st.write(f"**{i}.** {cause}")
+                    else:
+                        st.write("No causes identified")
+                    
+                    st.subheader("Recommended Actions")
+                    actions = explanation.get("recommended_actions", [])
+                    if actions:
+                        for i, action in enumerate(actions, 1):
+                            st.write(f"**{i}.** {action}")
+                    else:
+                        st.write("No actions recommended")
+        else:
+            st.error("Could not fetch anomalies from API")
             
-            st.subheader("Anomaly Details")
-            
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                st.metric("Site ID", selected_anomaly.get("site_id", "N/A"))
-            
-            with col2:
-                st.write(f"**Timestamp:** {selected_anomaly.get('timestamp', 'N/A')}")
-            
-            with col3:
-                severity = explanation.get("severity", "Unknown")
-                severity_emoji = {
-                    "Low": "Green", "Medium": "Yellow",
-                    "High": "Red", "Critical": "Critical"
-                }.get(severity, "Unknown")
-                st.metric("Severity", severity)
-            
-            with col4:
-                confidence = explanation.get("confidence", 0)
-                st.metric("Confidence", f"{confidence:.0%}")
-            
-            st.divider()
-            
-            st.subheader("Summary")
-            st.write(explanation.get("summary", "No summary available"))
-            
-            st.subheader("Likely Causes (Ranked)")
-            causes = explanation.get("likely_causes", [])
-            if causes:
-                for i, cause in enumerate(causes, 1):
-                    st.write(f"**{i}.** {cause}")
-            else:
-                st.write("No causes identified")
-            
-            st.subheader("Recommended Actions")
-            actions = explanation.get("recommended_actions", [])
-            if actions:
-                for i, action in enumerate(actions, 1):
-                    st.write(f"**{i}.** {action}")
-            else:
-                st.write("No actions recommended")
-            
-            with st.expander("Raw Analysis Context", expanded=False):
-                st.json(context)
+    except Exception as e:
+        st.error(f"Error fetching anomalies: {str(e)}")
 
 else:
     st.info("Run anomaly detection in Section 3 first")
@@ -451,39 +557,42 @@ st.markdown("---")
 
 st.header("Section 5: Executive Summary")
 
-if "result_df" in st.session_state:
-    result_df = st.session_state.result_df
+if "detection_result" in st.session_state:
+    result = st.session_state.detection_result
     
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        total_anomalies = result_df["is_anomaly"].sum() if "is_anomaly" in result_df.columns else 0
+        total_anomalies = result.get("anomalies_found", 0)
         st.metric("Total Anomalies Detected", int(total_anomalies))
     
     with col2:
-        anomaly_rate = (total_anomalies / len(result_df) * 100) if len(result_df) > 0 else 0
+        anomaly_rate = result.get("anomaly_rate", 0.0)
         st.metric("Overall Anomaly Rate", f"{anomaly_rate:.1f}%")
     
     with col3:
-        if "site_id" in result_df.columns:
-            affected_sites = result_df[result_df["is_anomaly"]]["site_id"].nunique() if total_anomalies > 0 else 0
-            st.metric("Affected Sites", int(affected_sites))
+        if "explanation" in st.session_state:
+            severity = st.session_state.explanation.get("severity", "Unknown")
+            st.metric("Current Anomaly Severity", severity)
     
     st.divider()
     
     # Severity distribution
     if "explanation" in st.session_state:
-        st.subheader("Severity Distribution")
+        st.subheader("Severity Assessment")
         
         col1, col2 = st.columns(2)
         
         with col1:
-            if "severity" in st.session_state.explanation:
-                severity = st.session_state.explanation["severity"]
-                st.write(f"Current Anomaly Severity: **{severity}**")
+            explanation = st.session_state.explanation
+            severity = explanation.get("severity", "Unknown")
+            confidence = explanation.get("confidence", 0)
+            
+            st.write(f"**Severity Level:** {severity}")
+            st.write(f"**Confidence:** {confidence:.0%}")
             
             st.write("""
-            **Severity Levels:**
+            **Severity Scale:**
             - Low: Minor metric deviation
             - Medium: Notable anomaly, monitor
             - High: Significant issue, investigate
@@ -491,56 +600,55 @@ if "result_df" in st.session_state:
             """)
         
         with col2:
-            if "site_id" in result_df.columns and "is_anomaly" in result_df.columns:
-                st.subheader("Anomalies by Site")
+            # Try to fetch anomaly distribution from API
+            try:
+                response = requests.get(
+                    f"{API_BASE_URL}/api/metrics",
+                    timeout=API_TIMEOUT
+                )
                 
-                anomalies_by_site = result_df[result_df["is_anomaly"]].groupby("site_id").size()
-                
-                if len(anomalies_by_site) > 0:
-                    fig_bar = go.Figure(data=[
-                        go.Bar(x=anomalies_by_site.index.astype(str), y=anomalies_by_site.values)
-                    ])
-                    fig_bar.update_layout(
-                        title="Anomaly Count by Site",
-                        xaxis_title="Site ID",
-                        yaxis_title="Anomaly Count",
-                        height=300
-                    )
-                    st.plotly_chart(fig_bar, use_container_width=True)
+                if response.status_code == 200:
+                    metrics = response.json()
+                    st.metric("Detection Method", result.get("detection_method", "?").upper())
+                    st.metric("Anomalies Found", result.get("anomalies_found", 0))
+            except:
+                pass
     
     st.divider()
     
-    # Metric impact
-    st.subheader("Affected Metrics")
+    st.subheader("Platform Metrics & Governance")
     
-    selected_metrics = st.session_state.get("selected_metrics", [])
-    if selected_metrics:
-        metric_anomalies = {}
+    try:
+        # Fetch platform metrics from API
+        response = requests.get(
+            f"{API_BASE_URL}/api/metrics",
+            timeout=API_TIMEOUT
+        )
         
-        for metric in selected_metrics:
-            if f"is_anomaly_{metric}" in result_df.columns:
-                count = result_df[f"is_anomaly_{metric}"].sum()
-                metric_anomalies[metric] = int(count)
-            elif "is_anomaly" in result_df.columns:
-                count = result_df["is_anomaly"].sum()
-                metric_anomalies[metric] = int(count)
-        
-        metric_data = pd.DataFrame(
-            list(metric_anomalies.items()),
-            columns=["Metric", "Anomaly Count"]
-        ).sort_values("Anomaly Count", ascending=False)
-        
-        st.dataframe(metric_data, use_container_width=True, hide_index=True)
-        
-        if len(metric_data) > 0 and metric_data["Anomaly Count"].sum() > 0:
-            fig_pie = go.Figure(data=[
-                go.Pie(labels=metric_data["Metric"], values=metric_data["Anomaly Count"])
-            ])
-            fig_pie.update_layout(
-                title="Anomaly Distribution by Metric",
-                height=400
-            )
-            st.plotly_chart(fig_pie, use_container_width=True)
+        if response.status_code == 200:
+            metrics = response.json()
+            
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("Total Requests", metrics.get("total_requests", 0))
+            
+            with col2:
+                st.metric("LLM Calls", metrics.get("total_llm_calls", 0))
+            
+            with col3:
+                st.metric("Total Errors", metrics.get("total_errors", 0))
+            
+            with col4:
+                st.metric("Latency Measurements", metrics.get("total_latency_measurements", 0))
+            
+            # Token usage
+            token_stats = metrics.get("token_usage_stats", {})
+            if token_stats:
+                st.write(f"**LLM Token Usage:** {token_stats.get('total_tokens', 0)} tokens")
+                st.write(f"**Estimated Cost:** ${token_stats.get('total_cost_usd', 0):.4f}")
+    except Exception as e:
+        st.warning(f"Could not fetch metrics: {str(e)}")
 
 else:
     st.info("Run anomaly detection to see executive summary")
@@ -552,21 +660,34 @@ else:
 
 st.markdown("---")
 st.markdown("""
-### Network Incident Investigator
+### ✅ Network Incident Investigator - REST API Edition
+
+**Architecture:**
+- ✅ Frontend communicates via REST API (not direct Python calls)
+- ✅ All operations tracked with governance & audit logs
+- ✅ Metrics collected in real-time for observability
+- ✅ User actions recorded with trace IDs for debugging
+- ✅ Multi-provider support (Ollama, OpenAI, Azure, Vertex AI)
 
 **5-Section Workflow:**
-1. Data Source: Upload CSV or use backend sample
-2. Configuration: Choose metrics, detection method, LLM provider
-3. Detection: Run anomaly detection with plots
-4. Explanation: Get AI-powered root cause analysis
-5. Summary: View executive metrics and severity
+1. **Data Source:** Upload CSV or generate synthetic data via API
+2. **Configuration:** Choose metrics, detection method, LLM provider
+3. **Detection:** Run anomaly detection with metrics recorded to platform
+4. **Explanation:** Get AI-powered root cause analysis (traced)
+5. **Summary:** View executive metrics and governance data
 
-**Scalable & Pluggable Architecture:**
-- Frontend-independent REST API
-- Pluggable LLM providers (Ollama, OpenAI, Azure, Vertex AI)
-- Multiple data sources (CSV, APIs, Databases, Kafka)
-- Can be deployed with any frontend (React, Vue, Mobile, etc.)
+**Governance Features (via API):**
+- Audit logging: All actions logged to `/api/governance/audit-logs`
+- Access control: Role-based permissions via `/api/governance/users`
+- Metrics: Real-time observability via `/api/metrics`
+- Health: Service status via `/api/health`
+- Tracing: Request correlation via X-Trace-ID header
+
+**Scalable & Frontend-Agnostic:**
+- FastAPI backend decoupled from UI
+- Can replace Streamlit with React, Vue, Mobile, or custom frontend
 - Docker & Kubernetes ready
+- Multi-instance deployment supported
 
-**Documentation:** See README.md and GETTING_STARTED.md
+**Documentation:** See [EXECUTION_ALIGNMENT.md](EXECUTION_ALIGNMENT.md), [GETTING_STARTED.md](GETTING_STARTED.md), [GOVERNANCE_AND_MONITORING.md](GOVERNANCE_AND_MONITORING.md)
 """)
