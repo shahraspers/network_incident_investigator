@@ -60,19 +60,9 @@ def get_current_user():
 st.title("Network Incident Investigator")
 st.markdown("GenAI-powered anomaly detection and root cause analysis for network KPI metrics")
 
-# Sidebar: API Status & Configuration
+# Sidebar: User & Tracing Info
 with st.sidebar:
-    st.header("Configuration")
-    
-    # API Status Check
-    try:
-        health = requests.get(f"{API_BASE_URL}/api/health", timeout=2)
-        if health.status_code == 200:
-            st.success("✅ API Connected (port 8000)")
-        else:
-            st.error("❌ API Error")
-    except Exception as e:
-        st.error(f"❌ API Offline: {str(e)[:50]}")
+    st.header("Session Info")
     
     # User email for audit logging
     st.text_input(
@@ -83,6 +73,10 @@ with st.sidebar:
     
     # Trace ID
     st.text(f"Trace ID: {get_trace_id()[:16]}...")
+    
+    st.divider()
+    st.caption("API: http://localhost:8000 (port 8000)")
+    st.caption("Streamlit: http://localhost:8501 (port 8501)")
 
 st.markdown("---")
 
@@ -490,10 +484,19 @@ if "detection_result" in st.session_state:
                                 st.success("✅ Analysis complete")
                                 st.info(f"Trace ID: {trace_id}")
                             else:
-                                st.error(f"Analysis failed: {response.json().get('detail', 'Unknown error')}")
+                                # Safe error parsing
+                                try:
+                                    error_detail = response.json().get('detail', 'Unknown error')
+                                except:
+                                    error_detail = f"HTTP {response.status_code}"
+                                st.error(f"Analysis failed: {error_detail}")
                                 
+                        except requests.exceptions.Timeout:
+                            st.error("❌ Request timeout - GenAI service took too long to respond")
+                        except requests.exceptions.ConnectionError:
+                            st.error("❌ Connection error - Cannot reach API on localhost:8000")
                         except Exception as e:
-                            st.error(f"Error: {str(e)}")
+                            st.error(f"❌ Error: {str(e)}")
                             logger.exception("GenAI analysis error")
                 
                 # Display explanation

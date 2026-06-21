@@ -1,102 +1,155 @@
 # 🎯 Execution & Port Alignment Guide
 
-**Status**: ✅ Fixed - All documentation and instructions are now aligned
+**Status**: ✅ Updated - All documentation and execution instructions aligned with latest changes
+
+---
+
+## 🔑 Critical: Environment Activation
+
+**⚠️ IMPORTANT: Each terminal must activate the virtual environment FIRST**
+
+Before running ANY command, activate the environment in your terminal:
+
+```bash
+# Windows (PowerShell)
+venv\Scripts\activate
+
+# Windows (Command Prompt)
+venv\Scripts\activate.bat
+
+# macOS/Linux
+source venv/bin/activate
+```
+
+You should see `(venv)` prefix in your terminal prompt after activation.
 
 ---
 
 ## Port Configuration Summary
 
-| Component | Default Port | Service Type | Command |
-|-----------|--------------|--------------|---------|
-| **Frontend (Streamlit)** | 8501 | Web UI | `streamlit run frontend/app.py` |
-| **Backend API (FastAPI)** | 8000 | REST API | `uvicorn backend.api:app --host 0.0.0.0 --port 8000 --reload` |
-| **Ollama (LLM)** | 11434 | Local Model Server | `ollama serve` |
+| Component | Default Port | Service Type | Status |
+|-----------|--------------|--------------|--------|
+| **Frontend (Streamlit)** | 8501 | Web UI | ✅ Active |
+| **Backend API (FastAPI)** | 8000 | REST API | ✅ Active |
+| **Ollama (LLM)** | 11434 | Local Model Server | 🟡 Optional |
 
 ---
 
-## 🚀 How to Start Everything
+## 🚀 Complete Startup Procedure
 
-### Method 1: Using Uvicorn Directly (Recommended)
+### Step 1: Open 3 Terminals (Windows PowerShell or macOS Terminal)
 
-**Terminal 1 - Start Backend API**:
+### Terminal 1: Backend API (FastAPI)
+
 ```bash
+# Step 1: Activate environment
+venv\Scripts\activate
+
+# Step 2: Start FastAPI server
 uvicorn backend.api:app --host 0.0.0.0 --port 8000 --reload
 ```
-- Starts FastAPI server on port **8000**
-- API docs available at: `http://localhost:8000/docs`
-- OpenAPI schema: `http://localhost:8000/openapi.json`
 
-**Terminal 2 - Start Frontend UI**:
+**Output should show:**
+```
+INFO:     Uvicorn running on http://0.0.0.0:8000
+INFO:     Application startup complete
+```
+
+**Verify API is working:**
+- Open browser to: `http://localhost:8000/docs` (Swagger UI)
+- Or: `http://localhost:8000/api/health` (health check)
+
+---
+
+### Terminal 2: Frontend UI (Streamlit)
+
 ```bash
+# Step 1: Activate environment
+venv\Scripts\activate
+
+# Step 2: Start Streamlit UI
 streamlit run frontend/app.py
 ```
-- Starts Streamlit UI on port **8501**
-- Opens automatically at: `http://localhost:8501`
 
-**Terminal 3 (Optional) - Start Ollama**:
+**Output should show:**
+```
+  You can now view your Streamlit app in your browser.
+  Local URL: http://localhost:8501
+```
+
+**Verify UI is working:**
+- Browser should auto-open to: `http://localhost:8501`
+- Or open manually to same URL
+
+---
+
+### Terminal 3 (Optional): Ollama for Local LLM
+
 ```bash
+# Only needed if you want local GenAI provider
+# NOTE: Ollama must be installed separately on your system
+
+# Step 1: Activate environment (optional, not required for ollama)
+venv\Scripts\activate
+
+# Step 2: Start Ollama
 ollama serve
 ```
-- Starts Ollama on port **11434**
-- Required if using local LLM provider
+
+**Output should show:**
+```
+Listening on [::1]:11434 (and port 11434 on the default interface)
+```
+
+**Verify Ollama is working:**
+- Run in another terminal: `curl http://localhost:11434/api/tags`
+- Should return JSON with available models
 
 ---
 
-### Method 2: Using Python Module (Alternative)
+## Recent Updates & Fixes
 
-**Terminal 1 - Backend API**:
-```bash
-python -m uvicorn backend.api:app --host 0.0.0.0 --port 8000 --reload
-```
+### UI Improvements
+✅ **Simplified Sidebar**: Removed problematic health check display
+✅ **Better Error Handling**: GenAI analysis gracefully handles provider failures
+✅ **LLM Metrics**: Now tracked even if provider unavailable
 
-**Terminal 2 - Frontend UI**:
-```bash
-streamlit run frontend/app.py
-```
+### API Improvements
+✅ **Metrics Recording**: LLM calls counted regardless of success/failure
+✅ **Timezone Fix**: Metrics datetime comparisons now work correctly
+✅ **Graceful Degradation**: All endpoints return valid JSON responses
 
----
-
-### Method 3: Direct Python (From api.py main block)
-
-**Terminal 1**:
-```bash
-python backend/api.py
-```
-- This internally calls `uvicorn.run()` with same configuration
+### Monitoring & Governance
+✅ **Platform Metrics**: Tracks total requests, LLM calls, errors, latency
+✅ **Token Usage**: Estimates and records LLM token consumption
+✅ **Audit Logging**: All operations logged with trace IDs
 
 ---
 
 ## Uvicorn Execution Details
 
-### Standard Uvicorn Options Used
+### Standard Command Breakdown
 
 ```bash
-uvicorn backend.api:app                    # Module and app
-  --host 0.0.0.0                           # Listen on all interfaces
-  --port 8000                              # FastAPI default port
+uvicorn backend.api:app                    # Module and app object
+  --host 0.0.0.0                           # Listen on all network interfaces
+  --port 8000                              # Port number
   --reload                                 # Auto-reload on file changes (dev only)
-  # [optional: --workers 4]                # Multiple workers for production
-  # [optional: --ssl-keyfile key.pem]      # For HTTPS
 ```
 
 ### For Production Deployment
 
 ```bash
-# With multiple workers and no reload
+# Multiple workers (disable reload)
 uvicorn backend.api:app --host 0.0.0.0 --port 8000 --workers 4
 
-# With SSL
-uvicorn backend.api:app --host 0.0.0.0 --port 8000 --ssl-keyfile=./key.pem --ssl-certfile=./cert.pem
+# With SSL/HTTPS
+uvicorn backend.api:app --host 0.0.0.0 --port 8000 \
+  --ssl-keyfile=./key.pem --ssl-certfile=./cert.pem
 
-# Behind reverse proxy (nginx)
+# Behind reverse proxy
 uvicorn backend.api:app --host 127.0.0.1 --port 8000
 ```
-
----
-
-## Governance Features & Port Coordination
-
-The governance & monitoring layer requires **both** UI and API running:
 
 ### 1. Backend API (Port 8000) - Provides Governance
 

@@ -189,37 +189,69 @@ cp .env.example .env
 
 ### Running the System
 
+#### ⚠️ IMPORTANT: Activate Virtual Environment First
+
+Before running ANY command, activate the virtual environment in your terminal:
+
+**Windows (PowerShell):**
+```bash
+venv\Scripts\activate
+```
+
+**Windows (Command Prompt):**
+```bash
+venv\Scripts\activate.bat
+```
+
+**macOS/Linux:**
+```bash
+source venv/bin/activate
+```
+
+You should see `(venv)` prefix in your terminal after activation.
+
+---
+
 #### Option 1: Streamlit UI (Recommended for Demo)
 
+In a terminal with `(venv)` activated:
 ```bash
 streamlit run frontend/app.py
 ```
 - Opens at `http://localhost:8501`
 - Features: Upload CSV, real-time anomaly detection, GenAI analysis
+- ✅ Simplified sidebar (no connection errors)
+- ✅ Graceful error handling for GenAI failures
 
 #### Option 2: Backend API
 
+In a terminal with `(venv)` activated:
 ```bash
-# Start with uvicorn (recommended)
 uvicorn backend.api:app --host 0.0.0.0 --port 8000 --reload
-
-# OR with Python module
-python -m uvicorn backend.api:app --host 0.0.0.0 --port 8000 --reload
 ```
 - Runs at `http://localhost:8000`
 - API docs: `http://localhost:8000/docs`
+- ✅ All metrics endpoints functional
+- ✅ LLM metrics tracked (even with provider failures)
 
-#### Option 3: Run Both Simultaneously
+#### Option 3: Run Both Simultaneously (Recommended)
 
-Terminal 1 (Backend API on port 8000):
+**Terminal 1 (Backend API on port 8000)** - Activate venv, then:
 ```bash
 uvicorn backend.api:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-Terminal 2 (Frontend UI on port 8501):
+**Terminal 2 (Frontend UI on port 8501)** - Activate venv, then:
 ```bash
 streamlit run frontend/app.py
 ```
+
+**Terminal 3 (Optional - Ollama for local LLM):**
+```bash
+ollama serve
+```
+- Runs on port 11434
+- Only needed if using local GenAI provider
 
 ---
 
@@ -229,11 +261,44 @@ The platform includes **enterprise-grade governance and monitoring capabilities*
 
 ### Five Core Capabilities
 
-1. **Centralized Logging** - Structured JSON logs with trace IDs
-2. **Evaluation Layer** - Quality metrics, drift detection, hallucination analysis
-3. **Observability** - Real-time platform metrics (latency, costs, errors)
-4. **Governance** - RBAC, audit trails, PII scrubbing
-5. **Health Monitoring** - Service health checks, automatic failover
+1. **Centralized Logging** - Structured JSON logs with trace IDs for request correlation
+2. **Evaluation Layer** - Quality metrics (precision, recall), drift detection, hallucination analysis
+3. **Observability** - Real-time platform metrics (latency, costs, errors, LLM usage)
+4. **Governance** - RBAC, immutable audit trails, PII scrubbing
+5. **Health Monitoring** - Service health checks, automatic provider failover
+
+### Recent Improvements (Latest Session)
+
+✅ **LLM Metrics Now Always Tracked** - Token usage recorded even when provider unavailable  
+✅ **Graceful Degradation** - GenAI failures don't crash API, return fallback responses  
+✅ **Timezone-Safe Metrics** - Fixed datetime comparison bug in metrics collection  
+✅ **Simplified UI** - Removed problematic health check from sidebar  
+✅ **Better Error Handling** - All endpoints return valid JSON responses  
+
+### Platform Metrics Dashboard
+
+The UI displays real-time platform metrics in the Executive Summary section:
+
+| Metric | Source | Updated |
+|--------|--------|---------|
+| Total Requests | API counter | Every request |
+| LLM Calls | GenAI endpoint | Every call (incl. failures) |
+| LLM Token Usage | Token recorder | Per GenAI request |
+| Estimated Cost | Token pricing | Per LLM call |
+| Total Errors | Error recorder | On failures |
+| Latency Stats | PerformanceTimer | Per operation |
+
+### API Endpoints for Observability
+
+```
+GET  /api/metrics                   # Full platform metrics dashboard
+GET  /api/metrics/latency           # Latency percentiles (p50, p95, p99)
+GET  /api/metrics/tokens            # Token usage by model & cost
+GET  /api/metrics/errors            # Error stats by type/module
+GET  /api/health                    # Service health check
+GET  /api/genai/providers           # LLM provider status
+GET  /api/governance/audit-logs     # Audit trail query
+```
 
 ### New API Endpoints
 

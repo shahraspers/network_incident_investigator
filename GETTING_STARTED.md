@@ -35,9 +35,9 @@ This system is **completely frontend-agnostic** and **provider-agnostic**:
 ### 1. Prerequisites
 - Python 3.8+
 - pip
-- (Optional) Ollama for local LLM
+- (Optional) Ollama for local LLM (if using local GenAI provider)
 
-### 2. Setup Environment
+### 2. Setup Environment (One-Time)
 
 ```bash
 # Clone/navigate to project
@@ -45,43 +45,81 @@ cd telus_rec_interview_2606
 
 # Create virtual environment
 python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+
+# Activate virtual environment
+# Windows:
+venv\Scripts\activate
+# macOS/Linux:
+source venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
 
-# Copy environment config
+# Copy environment config (optional)
 cp .env.example .env
 ```
 
-### 3. Run the Application
+---
 
-**Option A: Web UI (Recommended for Demo)**
-```bash
-streamlit run frontend/app.py
-# Opens at http://localhost:8501
-```
+## 🚀 Running the Application
 
-**Option B: REST API**
+### Setup: 3 Separate Terminals (Each with environment activated)
+
+**Terminal 1: Backend API (FastAPI)**
 ```bash
-# Start with uvicorn (recommended)
+# Activate environment
+venv\Scripts\activate  # Windows
+# source venv/bin/activate  # macOS/Linux
+
+# Start API server
 uvicorn backend.api:app --host 0.0.0.0 --port 8000 --reload
-
-# OR alternatively:
-python -m uvicorn backend.api:app --host 0.0.0.0 --port 8000 --reload
-
-# Available at http://localhost:8000
-# API Docs: http://localhost:8000/docs
-# OpenAPI Schema: http://localhost:8000/openapi.json
 ```
+✅ API available at: `http://localhost:8000`
+✅ API docs: `http://localhost:8000/docs`
 
-**Option C: Quick Start Script** (if available)
+**Terminal 2: Frontend UI (Streamlit)**
 ```bash
-python quickstart.py setup      # Install & setup
-python quickstart.py frontend   # Run UI (Streamlit on 8501)
-python quickstart.py backend    # Run API (Uvicorn on 8000)
-python quickstart.py demo       # Quick demo
+# Activate environment
+venv\Scripts\activate  # Windows
+# source venv/bin/activate  # macOS/Linux
+
+# Start Streamlit UI
+streamlit run frontend/app.py
 ```
+✅ UI opens at: `http://localhost:8501`
+
+**Terminal 3 (Optional): Ollama (Local LLM)**
+```bash
+# Activate environment (if using local setup)
+venv\Scripts\activate  # Windows
+# source venv/bin/activate  # macOS/Linux
+
+# Start Ollama server
+ollama serve
+```
+✅ Ollama available at: `http://localhost:11434`
+⚠️ Only needed if using local GenAI provider
+
+---
+
+### Quick Reference: Environment Activation by OS
+
+| OS | Command |
+|---|---|
+| **Windows (PowerShell)** | `venv\Scripts\activate` |
+| **Windows (CMD)** | `venv\Scripts\activate.bat` |
+| **macOS/Linux (Bash/Zsh)** | `source venv/bin/activate` |
+
+---
+
+### Verification Checklist
+
+After starting all terminals:
+- [ ] Backend API running on **port 8000** (`http://localhost:8000`)
+- [ ] Frontend UI running on **port 8501** (`http://localhost:8501`)
+- [ ] (Optional) Ollama running on **port 11434** (if enabled)
+- [ ] Sidebar shows "Session Info" without connection errors
+- [ ] Can load sample data and run anomaly detection
 
 ---
 

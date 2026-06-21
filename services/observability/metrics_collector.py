@@ -5,7 +5,7 @@ Tracks API latency, anomaly detection latency, LLM usage, errors, throughput.
 import time
 from typing import Dict, List, Optional
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 import statistics
 
@@ -165,7 +165,7 @@ class MetricsCollector:
         minutes: int = 60
     ) -> Dict:
         """Get latency statistics"""
-        cutoff = datetime.utcnow() - timedelta(minutes=minutes)
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=minutes)
         
         metrics = [
             m for m in self.latencies
@@ -198,7 +198,7 @@ class MetricsCollector:
         minutes: int = 60
     ) -> Dict:
         """Get token usage and cost statistics"""
-        cutoff = datetime.utcnow() - timedelta(minutes=minutes)
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=minutes)
         
         metrics = [
             m for m in self.token_usage
@@ -239,7 +239,7 @@ class MetricsCollector:
         minutes: int = 60
     ) -> Dict:
         """Get error statistics"""
-        cutoff = datetime.utcnow() - timedelta(minutes=minutes)
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=minutes)
         
         metrics = [
             m for m in self.errors
@@ -267,7 +267,7 @@ class MetricsCollector:
         minutes: int = 60
     ) -> Dict:
         """Get anomaly detection statistics"""
-        cutoff = datetime.utcnow() - timedelta(minutes=minutes)
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=minutes)
         
         metrics = [
             m for m in self.anomaly_counts

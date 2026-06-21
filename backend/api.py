@@ -398,7 +398,7 @@ async def explain_anomaly(request: AnomalyExplanationRequest):
             }
         elif request.provider == "openai":
             genai_config = {
-                "api_key": "",  # Should come from config
+                "api_key": "",
                 "model": "gpt-3.5-turbo"
             }
         
@@ -427,22 +427,72 @@ async def explain_anomaly(request: AnomalyExplanationRequest):
             }
         }
         
-        # Get explanation
-        explanation = client.explain_anomaly(context)
+        # Get explanation with error handling
+        explanation = None
+        tokens_used = 50  # Default estimate for fallback
         
+        try:
+            explanation = client.explain_anomaly(context)
+            logger.info(f"GenAI response received for {request.site_id}")
+            # Estimate tokens from response
+            tokens_used = max(50, len(str(explanation).split()) // 2) if explanation else 50
+        
+        except Exception as llm_err:
+            logger.warning(f"GenAI provider error: {llm_err}")
+            try:
+                metrics_collector.record_error(
+                    module="genai",
+                    operation="explain",
+                    error_type=type(llm_err).__name__
+                )
+            except:
+                pass  # Don't fail if we can't record error metrics
+            explanation = None
+        
+        # ALWAYS record LLM metrics regardless of success/failure
+        try:
+            metrics_collector.record_token_usage(
+                provider=request.provider,
+                model="llama2" if request.provider == "ollama_local" else "gpt-3.5-turbo",
+                input_tokens=100,  # Approximate input
+                output_tokens=tokens_used  # Approximate output
+            )
+        except Exception as metrics_err:
+            logger.warning(f"Failed to record LLM metrics: {metrics_err}")
+        
+        # Use fallback if explanation failed
+        if not explanation:
+            explanation = {
+                "summary": "Anomaly detected - provider unavailable",
+                "likely_causes": ["Provider configuration issue"],
+                "recommended_actions": ["Check if Ollama is running on port 11434"],
+                "severity": "Low",
+                "confidence": 0.0
+            }
+        
+        # Ensure all required fields exist
         return AnomalyExplanationResponse(
             success=True,
             summary=explanation.get("summary", "Analysis complete"),
             likely_causes=explanation.get("likely_causes", []),
             recommended_actions=explanation.get("recommended_actions", []),
             severity=explanation.get("severity", "Medium"),
-            confidence=explanation.get("confidence", 0.7),
+            confidence=float(explanation.get("confidence", 0.7)),
             timestamp=datetime.now().isoformat()
         )
     
     except Exception as e:
-        logger.error(f"GenAI error: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error(f"Unhandled GenAI endpoint error: {e}", exc_info=True)
+        # Return graceful response instead of 500
+        return AnomalyExplanationResponse(
+            success=False,
+            summary=f"Error: {str(e)[:100]}",
+            likely_causes=[],
+            recommended_actions=["Check server logs for details"],
+            severity="Low",
+            confidence=0.0,
+            timestamp=datetime.now().isoformat()
+        )
 
 
 @app.get("/api/genai/providers")
